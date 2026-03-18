@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics-Driven Supersonic Nozzle Generator</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f4f8;
+            color: #2c3e50;
+            margin: 0;
+            padding: 20px;
+        }
+        h2 {
+            text-align: center;
+            border-bottom: 2px solid #34495e;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .main-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .input-panel, .output-panel {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            flex: 1;
+            min-width: 320px;
+        }
+        .section-title {
+            margin-top: 0;
+            color: #2980b9;
+            font-size: 18px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .input-group {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        .input-group label {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .input-group input {
+            width: 100px;
+            padding: 6px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background-color: #2ecc71;
+        }
+        button.copy-btn {
+            background-color: #2980b9;
+            margin-top: 10px;
+        }
+        button.copy-btn:hover {
+            background-color: #3498db;
+        }
+        .results {
+            background: #ecf0f1;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 15px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        #plot {
+            width: 100%;
+            height: 400px;
+        }
+        textarea {
+            width: 100%;
+            height: 250px;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            resize: vertical;
+            white-space: pre;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Physics-Driven Supersonic Nozzle CAD Generator</h2>
+
+    <div class="main-container">
+        <div class="input-panel">
+            <h3 class="section-title">1. Flow & Gas Properties</h3>
+            <div class="input-group">
+                <label title="Chamber Pressure">Stagnation Pressure P<sub>o</sub> (kPa):</label>
+                <input type="number" id="Pc" value="5000" step="any">
+            </div>
+            <div class="input-group">
+                <label title="Chamber Temperature">Stagnation Temperature T<sub>o</sub> (K):</label>
+                <input type="number" id="Tc" value="3000" step="any">
+            </div>
+            <div class="input-group">
+                <label title="Mass Flow Rate">Mass Flow Rate ṁ (kg/s):</label>
+                <input type="number" id="mdot" value="50" step="any">
+            </div>
+            <div class="input-group">
+                <label title="Specific Heat Ratio">Specific Heat Ratio γ (Gamma):</label>
+                <input type="number" id="gamma" value="1.4" step="any">
+            </div>
+            <div class="input-group">
+                <label title="Gas Constant">Gas Constant R (J/kg·K):</label>
+                <input type="number" id="R" value="287" step="any">
+            </div>
+
+            <h3 class="section-title" style="margin-top: 20px;">2. Target & Geometry</h3>
+            <div class="input-group">
+                <label title="Exit Pressure">Exit Pressure Pe (kPa):</label>
+                <input type="number" id="Pe" value="101" step="any">
+            </div>
+            <div class="input-group">
+                <label title="Inlet to Throat Ratio">Inlet/Throat Dia Ratio:</label>
+                <input type="number" id="inletRatio" value="2.0" step="any">
+            </div>
+            <div class="input-group">
+                <label title="Total Nozzle Length">Nozzle Length (mm):</label>
+                <input type="number" id="length" value="600" step="any">
+            </div>
+            <div class="input-group">
+                <label title="Shell Thickness">Shell Thickness (mm):</label>
+                <input type="number" id="thickness" value="3" step="any">
+            </div>
+
+            <button onclick="calculateAndGenerate()">Calculate & Generate</button>
+
+            <div class="results" id="calcResults">
+                Awaiting calculation...
+            </div>
+        </div>
+
+        <div class="output-panel" style="flex: 2;">
+            <h3 class="section-title">Nozzle Profile (2D Sketch)</h3>
+            <div id="plot"></div>
+
+            <h3 class="section-title" style="margin-top: 20px;">SolidWorks VBA Macro (Dynamic)</h3>
+            <textarea id="macroOutput" readonly></textarea>
+            <button class="copy-btn" onclick="copyMacro()">Copy VBA Macro</button>
+        </div>
+    </div>
+
+    <script>
+        function calculateAndGenerate() {
+            // collecting input data from html table
+            const Pc = parseFloat(document.getElementById('Pc').value) * 1000; 
+            const Tc = parseFloat(document.getElementById('Tc').value);
+            const mdot = parseFloat(document.getElementById('mdot').value);
+            const gamma = parseFloat(document.getElementById('gamma').value);
+            const R = parseFloat(document.getElementById('R').value);
+            const Pe = parseFloat(document.getElementById('Pe').value) * 1000; 
+            const inletRatio = parseFloat(document.getElementById('inletRatio').value);
+            const L_mm = parseFloat(document.getElementById('length').value);
+            const thickness = parseFloat(document.getElementById('thickness').value);
+
+            if ([Pc, Tc, mdot, gamma, R, Pe, inletRatio, L_mm, thickness].some(isNaN)) {
+                alert("Please ensure all inputs are valid numbers.");
+                return;
+            }
+            if (Pe >= Pc) {
+                alert("Exit pressure (Pe) must be less than Chamber pressure (Pc) for supersonic flow.");
+                return;
+            }
+
+            // --- 1. Thermodynamics & Gas Dynamics ---
+            const term1 = (gamma + 1) / 2;
+            const exp1 = (gamma + 1) / (2 * (gamma - 1));
+            const At = (mdot * Math.sqrt(R * Tc)) / (Pc * Math.sqrt(gamma)) * Math.pow(term1, exp1);
+            
+            const pr_ratio = Pc / Pe;
+            const exp2 = (gamma - 1) / gamma;
+            const Me = Math.sqrt((2 / (gamma - 1)) * (Math.pow(pr_ratio, exp2) - 1));
+
+            const term2 = (2 + (gamma - 1) * Math.pow(Me, 2)) / (gamma + 1);
+            const Ae_At_ratio = (1 / Me) * Math.pow(term2, exp1);
+            const Ae = At * Ae_At_ratio;
+
+            const rt = Math.sqrt(At / Math.PI) * 1000;
+            const re = Math.sqrt(Ae / Math.PI) * 1000;
+            const ri = rt * inletRatio;
+
+            // radius to diameter for solidworks macro
+            const dia_in = ri * 2;
+            const dia_out = re * 2;
+            const dia_th = rt * 2;
+
+            document.getElementById('calcResults').innerHTML = `
+                <strong>Derived Parameters:</strong><br>
+                Throat Dia: ${dia_th.toFixed(2)} mm<br>
+                Exit Dia: ${dia_out.toFixed(2)} mm<br>
+                Inlet Dia: ${dia_in.toFixed(2)} mm<br>
+                Exit Mach Number (Me): ${Me.toFixed(3)}<br>
+                Expansion Ratio (Ae/At): ${Ae_At_ratio.toFixed(2)}
+            `;
+
+            // --- 2. 2D Plotting (Cubic Polynomial) ---
+            let xCoords = [], yCoords = [];
+            const Li = L_mm / 3, Le = 2 * L_mm / 3, numPoints = 100;
+            const startX = -Li, endX = Le, step = (endX - startX) / numPoints;
+
+            for (let j = 0; j <= numPoints; j++) {
+                let i = startX + j * step;
+                let y = 0;
+                if (i < 0) {
+                    let val = (-i) / Li;
+                    y = rt + (ri - rt) * (3 * Math.pow(val, 2) - 2 * Math.pow(val, 3));
+                } else {
+                    let val = i / Le;
+                    y = rt + (re - rt) * (3 * Math.pow(val, 2) - 2 * Math.pow(val, 3));
+                }
+                xCoords.push(i);
+                yCoords.push(y);
+            }
+
+            const trace1 = { x: xCoords, y: yCoords, mode: 'lines', name: 'Upper Profile', line: {color: '#2980b9', width: 3} };
+            const trace2 = { x: xCoords, y: yCoords.map(y => -y), mode: 'lines', name: 'Lower Profile', line: {color: '#2980b9', width: 3, dash: 'dash'} };
+
+            const layout = {
+                title: 'Aerodynamic Nozzle Contour',
+                xaxis: { title: 'Axial Position (mm)', zeroline: true },
+                yaxis: { title: 'Radius (mm)', scaleanchor: 'x', scaleratio: 1 },
+                showlegend: false,
+                margin: { t: 40, b: 40, l: 50, r: 20 }
+            };
+
+            Plotly.newPlot('plot', [trace1, trace2], layout);
+
+            // --- 3. Dynamic SolidWorks Macro Generation ---
+            // macro code text
+            let macroString = `Option Explicit
+
+Sub main()
+    Dim swApp As SldWorks.SldWorks
+    Dim swModel As SldWorks.ModelDoc2
+    Dim swSketchMgr As SldWorks.SketchManager
+    Dim swFeatMgr As SldWorks.FeatureManager
+    Dim swExt As SldWorks.ModelDocExtension
+    
+    Set swApp = Application.SldWorks
+    
+    ' ---------------------------------------------------------
+    ' 1. Dimensional Inputs & Variable Declaration
+    ' ---------------------------------------------------------
+    Dim nzLength As Double, inDia As Double, outDia As Double
+    Dim thDia As Double, thick As Double
+    
+    ' Dimensions dynamically injected from Web Calculator
+    nzLength = ${L_mm.toFixed(4)} / 1000
+    inDia = ${dia_in.toFixed(4)} / 2000
+    outDia = ${dia_out.toFixed(4)} / 2000
+    thDia = ${dia_th.toFixed(4)} / 2000
+    thick = ${thickness.toFixed(4)} / 1000
+
+    Dim Li As Double, Le As Double
+    Li = nzLength / 3
+    Le = 2 * nzLength / 3
+    
+    ' ---------------------------------------------------------
+    ' 2. Polynomial Contour Calculation
+    ' ---------------------------------------------------------
+    Dim ptCount As Integer
+    ptCount = 100
+    
+    Dim splinePts() As Double
+    ReDim splinePts(0 To (ptCount * 3) - 1)
+    
+    Dim i As Integer
+    Dim x As Double, y As Double, t As Double
+    Dim stepSize As Double
+    stepSize = nzLength / (ptCount - 1)
+    
+    For i = 0 To ptCount - 1
+        x = -Li + (i * stepSize)
+        
+        If x < 0 Then
+            t = -x / Li
+            y = thDia + (inDia - thDia) * (3 * t ^ 2 - 2 * t ^ 3)
+        Else
+            t = x / Le
+            y = thDia + (outDia - thDia) * (3 * t ^ 2 - 2 * t ^ 3)
+        End If
+        
+        splinePts(i * 3) = x         ' X coordinate
+        splinePts(i * 3 + 1) = y     ' Y coordinate
+        splinePts(i * 3 + 2) = 0     ' Z coordinate
+    Next i
+    
+    ' ---------------------------------------------------------
+    ' 3. Document Initialization
+    ' ---------------------------------------------------------
+    Set swModel = swApp.NewDocument(swApp.GetUserPreferenceStringValue(8), 0, 0, 0)
+    If swModel Is Nothing Then
+        MsgBox "Failed to initialize a new document. Check template settings."
+        Exit Sub
+    End If
+    
+    Set swExt = swModel.Extension
+    Set swSketchMgr = swModel.SketchManager
+    Set swFeatMgr = swModel.FeatureManager
+    
+    ' ---------------------------------------------------------
+    ' 4. Sketch Creation & Geometry Tracing
+    ' ---------------------------------------------------------
+    swExt.SelectByID2 "Front Plane", "PLANE", 0, 0, 0, False, 0, Nothing, 0
+    swSketchMgr.InsertSketch True
+    
+    ' Create boundaries
+    swSketchMgr.CreateLine -Li, 0, 0, Le, 0, 0
+    swSketchMgr.CreateLine Le, 0, 0, Le, outDia, 0
+    swSketchMgr.CreateLine -Li, 0, 0, -Li, inDia, 0
+    
+    ' Pass coordinate array
+    swSketchMgr.CreateSpline2 (splinePts), True
+    
+    ' ---------------------------------------------------------
+    ' 5. Feature Operations: Revolve & Shell
+    ' ---------------------------------------------------------
+    swExt.SelectByID2 "Line1", "SKETCHSEGMENT", 0, 0, 0, False, 16, Nothing, 0
+    swFeatMgr.FeatureRevolve2 True, True, False, False, False, False, _
+        0, 0, 6.2831853071796, 0, False, False, 0.01, 0.01, 0, 0, 0, True, True, True
+        
+    swModel.ViewZoomtofit2
+    
+    ' Clear selections before shell
+    swModel.ClearSelection2 True
+    
+    Dim boolStatus As Boolean
+    ' Ray casting for Shell Face Selection
+    boolStatus = swExt.SelectByRay(Le, 0.0397, -0.0045, -0.255, -0.0847, -0.963, 0.00137, 2, True, 0, 0)
+    boolStatus = swExt.SelectByRay(-Li, 0.00536, -0.0211, 0.322, -0.271, -0.906, 0.00137, 2, True, 1, 0)
+    
+    swModel.InsertFeatureShell thick, False
+    
+    ' ---------------------------------------------------------
+    ' 6. View Manipulation
+    ' ---------------------------------------------------------
+    swModel.ViewZoomtofit2
+    swModel.ActiveView.RotateAboutCenter 0.1, 0.1
+    swModel.ActiveView.RotateAboutCenter 0.1, 0.1
+
+End Sub`;
+
+            document.getElementById('macroOutput').value = macroString;
+        }
+
+        function copyMacro() {
+            const macroText = document.getElementById('macroOutput');
+            macroText.select();
+            document.execCommand("copy");
+            alert("Macro copied! Paste into SolidWorks VBA editor.");
+        }
+
+        window.onload = calculateAndGenerate;
+    </script>
+</body>
+</html>
