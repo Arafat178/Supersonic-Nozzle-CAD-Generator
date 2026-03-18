@@ -92,7 +92,7 @@ This ensures:
 1. Open the HTML file in your browser:
 
    ```
-   Nozzle2.html
+   index.html
    ```
 
 2. Input your design parameters:
